@@ -34,8 +34,9 @@ public class PriorityQueue<E extends Comparable<? super E>>{
         if (size == 0) {
             return null;
         }
-
+        this.size--;
         return list.getFirst();
+
     }
 
     public int size() {
