@@ -22,12 +22,12 @@ import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.Map;
 
-
 public class SimpleHuffProcessor implements IHuffProcessor {
 
     private IHuffViewer myViewer;
-    private TreeNode huffmanTree;
     private int header;
+    private TreeNode huffmanTree;
+    private Map<Integer, String> huffCodes;
 
     /**
      * Preprocess data so that compression is possible ---
@@ -53,13 +53,12 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         PriorityQueue<TreeNode> huffTree = new PriorityQueue<>();
         this.header = headerFormat;
         BitInputStream inStream = new BitInputStream(in);
-        HashMap<String, Integer> freqMap = createFreqMap(inStream);
+        HashMap<Integer, Integer> freqMap = createFreqMap(inStream);
 
         // Creates priority queue with each char
-        for (String c : freqMap.keySet()) {
-            int charFreq = freqMap.get(c);
-            int ogChar = (int) c.charAt(0);
-            TreeNode charNode = new TreeNode(ogChar, charFreq);
+        for (Integer asciiVal : freqMap.keySet()) {
+            int charFreq = freqMap.get(asciiVal);
+            TreeNode charNode = new TreeNode(asciiVal, charFreq);
             huffTree.enqueue(charNode);
         }
 
@@ -76,44 +75,44 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         TreeNode huffmanTreeRoot = huffTree.dequeue();
         this.huffmanTree = huffmanTreeRoot;
 
-        Map<Integer, String> huffMap = generateHuffCode(huffmanTreeRoot, "");
-        System.out.println("Size: " + huffMap.size());
-        for(Integer i : huffMap.keySet()){
-            String path = huffMap.get(i);
-            System.out.println(i + " : " + path);
-        }
+        Map<Integer, String> huffCodes = generateHuffCode(huffmanTreeRoot, "");
+        
+        this.huffCodes = huffCodes;
 
         // TODO: Count bits saved
         return 0;
     }
 
+    private HashMap<Integer, Integer> createFreqMap(BitInputStream inStream) throws IOException {
+        // HashMap<String, Integer> freqMap = new HashMap<>();
+        HashMap<Integer, Integer> freqMap = new HashMap<>();
+
+        int curVal = inStream.read();
+        while (curVal != -1) {
+            // String letter = Character.toString((char) curVal);
+            freqMap.put(curVal, freqMap.getOrDefault(curVal, 0) + 1);
+            curVal = inStream.read();
+        }
+
+        return freqMap;
+    }
+
     private Map<Integer, String> generateHuffCode(TreeNode curNode, String curPath) {
         Map<Integer, String> huffMap = new HashMap<>();
-        if(curNode.isLeaf()){
+        if (curNode.isLeaf()) {
+            // If it's a leaf node, put the ASCII value and its path in the map
             huffMap.put(curNode.getValue(), curPath);
-        }else {
-            // Recursively generate codes for left and right subtrees and collect them in the map
+        } else {
+            // Recursively generate codes for left subtree, appending "0" to the path
             if (curNode.getLeft() != null) {
                 huffMap.putAll(generateHuffCode(curNode.getLeft(), curPath + "0"));
             }
+            // Recursively generate codes for right subtree, appending "1" to the path
             if (curNode.getRight() != null) {
                 huffMap.putAll(generateHuffCode(curNode.getRight(), curPath + "1"));
             }
         }
         return huffMap;
-    }
-
-    private HashMap<String, Integer> createFreqMap(BitInputStream inStream) throws IOException {
-        HashMap<String, Integer> freqMap = new HashMap<>();
-
-        int curVal = inStream.read();
-        while (curVal != -1) {
-            String letter = Character.toString((char) curVal);
-            freqMap.put(letter, freqMap.getOrDefault(letter, 0) + 1);
-            curVal = inStream.read();
-        }
-
-        return freqMap;
     }
 
     /**
