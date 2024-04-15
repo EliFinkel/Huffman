@@ -29,6 +29,7 @@ public class SimpleHuffProcessor implements IHuffProcessor {
     private TreeNode huffTreeRoot;
     private int[] freqs;
     private Map<Integer, String> huffCodes;
+    private int writtenBitNum;
 
     /**
      * Preprocess data so that compression is possible ---
@@ -51,7 +52,8 @@ public class SimpleHuffProcessor implements IHuffProcessor {
      * @throws IOException if an error occurs while reading from the input file.
      */
     public int preprocessCompress(InputStream in, int headerFormat) throws IOException {
-        PriorityQueue<TreeNode> huffTree = new PriorityQueue<>();
+        PriorityQueue<TreeNode> huffTreeQ = new PriorityQueue<>();
+        this.writtenBitNum = 0;
         this.header = headerFormat;
         BitInputStream inStream = new BitInputStream(in);
         HashMap<Integer, Integer> freqMap = createFreqMap(inStream);
@@ -63,29 +65,42 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         for (Integer asciiVal : freqMap.keySet()) {
             int charFreq = freqMap.get(asciiVal);
             TreeNode charNode = new TreeNode(asciiVal, charFreq);
-            
-            huffTree.enqueue(charNode);
+
+            huffTreeQ.enqueue(charNode);
             uncompSize += charFreq * BITS_PER_WORD;
+
         }
 
         // Makes huffTree
-        while (huffTree.size() > 1) {
+        while (huffTreeQ.size() > 1) {
             // Assume dequeue fetches and removes the smallest element
-            TreeNode left = huffTree.dequeue(); 
-             // Fetch the next smallest element
-            TreeNode right = huffTree.dequeue();
+            TreeNode left = huffTreeQ.dequeue();
+            // Fetch the next smallest element
+            TreeNode right = huffTreeQ.dequeue();
 
             TreeNode combined = new TreeNode(left, left.getFrequency() + right.getFrequency(), right);
             // Add the combined node back to the queue
-            huffTree.enqueue(combined); 
+            huffTreeQ.enqueue(combined);
         }
 
         // The last remaining node is the root of the Huffman tree
-        TreeNode huffmanTreeRoot = huffTree.dequeue();
+        TreeNode huffmanTreeRoot = huffTreeQ.dequeue();
         this.huffTreeRoot = huffmanTreeRoot;
 
-        // TODO: Count bits saved
-        return 0;
+        Map<Integer, String> huffCodes = generateHuffCode(this.huffTreeRoot, "");
+        this.huffCodes = huffCodes;
+
+
+
+
+        for (Integer i : freqMap.keySet()) {
+            int asciiVal = i;
+            int charFreq = freqMap.get(i);
+            String huffCode = huffCodes.get(asciiVal);
+            compSize += huffCode.length() * charFreq;
+        }
+
+        return uncompSize - compSize;
     }
 
     private HashMap<Integer, Integer> createFreqMap(BitInputStream inStream) throws IOException {
@@ -144,7 +159,6 @@ public class SimpleHuffProcessor implements IHuffProcessor {
      */
     public int compress(InputStream in, OutputStream out, boolean force) throws IOException {
 
-        Map<Integer, String> huffCodes = generateHuffCode(this.huffTreeRoot, "");
         // for(Integer i : huffCodes.keySet()){
         // System.out.println(i + " : " + huffCodes.get(i));
         // }
@@ -153,14 +167,19 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         BitOutputStream outStream = new BitOutputStream(out);
 
         outStream.writeBits(BITS_PER_INT, MAGIC_NUMBER);
+        writtenBitNum += BITS_PER_INT;
+
         if (this.header == STORE_COUNTS) {
             outStream.writeBits(BITS_PER_INT, STORE_COUNTS);
+            writtenBitNum += BITS_PER_INT;
 
             for (int k = 0; k < ALPH_SIZE; k++) {
                 outStream.writeBits(BITS_PER_INT, this.freqs[k]);
+                writtenBitNum += BITS_PER_INT;
             }
         } else if (this.header == STORE_TREE) {
             outStream.writeBits(BITS_PER_INT, STORE_TREE);
+            writtenBitNum += BITS_PER_INT;
             // Flatten tree
             writeTreeForSTF(this.huffTreeRoot, outStream);
         }
@@ -175,6 +194,8 @@ public class SimpleHuffProcessor implements IHuffProcessor {
 
             // System.out.println(Integer.toBinaryString(huffVal));
             outStream.writeBits(bitNum, huffVal);
+            writtenBitNum += bitNum;
+
             curVal = inStream.read();
 
         }
@@ -182,9 +203,8 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         outStream.close();
         inStream.close();
 
-        myViewer.showMessage("SUCCESFULLY COMPRESSED FILE");
-
-        return 0;
+        myViewer.showMessage("Wrote: " + writtenBitNum);
+        return writtenBitNum;
     }
 
     private void writeTreeForSTF(TreeNode curNode, BitOutputStream outStream) {
@@ -195,9 +215,11 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         if (curNode.isLeaf()) {
             outStream.writeBits(1, 1);
             outStream.writeBits(BITS_PER_WORD + 1, curNode.getValue());
+            writtenBitNum += BITS_PER_WORD + 2;
 
         } else {
             outStream.writeBits(1, 0);
+            writtenBitNum += 1;
             writeTreeForSTF(curNode.getLeft(), outStream);
             writeTreeForSTF(curNode.getRight(), outStream);
         }
@@ -214,8 +236,13 @@ public class SimpleHuffProcessor implements IHuffProcessor {
      *                     writing to the output file.
      */
     public int uncompress(InputStream in, OutputStream out) throws IOException {
-        throw new IOException("uncompress not implemented");
-        // return 0;
+        BitInputStream inStream = new BitInputStream(in);
+
+        int magic = inStream.readBits(BITS_PER_INT);
+        System.out.println(magic);
+
+        inStream.close();
+        return 0;
     }
 
     public void setViewer(IHuffViewer viewer) {
