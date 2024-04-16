@@ -28,7 +28,7 @@ public class TreeNode implements Comparable<TreeNode> {
      */
     private int frequency;
 
-    // The left child of this node. Equals null if no left child.
+    // The left child of this node. Equals null if nao left child.
     private TreeNode left;
 
 

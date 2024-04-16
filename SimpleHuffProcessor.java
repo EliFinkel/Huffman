@@ -30,6 +30,7 @@ public class SimpleHuffProcessor implements IHuffProcessor {
     private int[] freqs;
     private Map<Integer, String> huffCodes;
     private int writtenBitNum;
+    private int treeHeaderSize;
 
     /**
      * Preprocess data so that compression is possible ---
@@ -89,9 +90,6 @@ public class SimpleHuffProcessor implements IHuffProcessor {
 
         Map<Integer, String> huffCodes = generateHuffCode(this.huffTreeRoot, "");
         this.huffCodes = huffCodes;
-
-
-
 
         for (Integer i : freqMap.keySet()) {
             int asciiVal = i;
@@ -237,12 +235,78 @@ public class SimpleHuffProcessor implements IHuffProcessor {
      */
     public int uncompress(InputStream in, OutputStream out) throws IOException {
         BitInputStream inStream = new BitInputStream(in);
+        BitOutputStream outStream = new BitOutputStream(out);
 
+        // Read and validate the magic number
         int magic = inStream.readBits(BITS_PER_INT);
-        System.out.println(magic);
+        if (magic != MAGIC_NUMBER) {
+            inStream.close();
+            outStream.close();
+            throw new IOException("Invalid magic number, file may not be compressed with this format.");
+        }
 
+        // Read the header type
+        int headerType = inStream.readBits(BITS_PER_INT);
+        if (headerType != STORE_COUNTS) {
+            inStream.close();
+            outStream.close();
+            throw new IOException("Unsupported header type for this decompression method.");
+        }
+
+        // Rebuild the frequency table from the header
+        int[] freqsRebuilt = new int[ALPH_SIZE];
+        for (int k = 0; k < ALPH_SIZE; k++) {
+            freqsRebuilt[k] = inStream.readBits(BITS_PER_INT);
+        }
+
+        // Construct the Huffman tree from the frequency table
+        PriorityQueue<TreeNode> huffTreeQ = new PriorityQueue<>();
+        for (int i = 0; i < ALPH_SIZE; i++) {
+            if (freqsRebuilt[i] > 0) {
+                huffTreeQ.enqueue(new TreeNode(i, freqsRebuilt[i]));
+            }
+        }
+        while (huffTreeQ.size() > 1) {
+            TreeNode left = huffTreeQ.dequeue();
+            TreeNode right = huffTreeQ.dequeue();
+            TreeNode combined = new TreeNode(left, -1, right);
+            huffTreeQ.enqueue(combined);
+        }
+        TreeNode root = huffTreeQ.dequeue();
+
+        // Decode the data using the Huffman tree
+        int totalBitsWritten = 0;
+        boolean endOfFile = false;
+        while (!endOfFile) {
+            TreeNode currentNode = root;
+            while (!currentNode.isLeaf()) {
+                int bit = inStream.readBits(1);
+                if (bit == -1) {
+                    if (currentNode == root) {
+                        endOfFile = true; // Handle correctly when end of file is reached naturally
+                        break;
+                    } else {
+                        inStream.close();
+                        outStream.close();
+                        throw new IOException("Unexpected end of input stream while decoding.");
+                    }
+                }
+                currentNode = (bit == 0) ? currentNode.getLeft() : currentNode.getRight();
+            }
+
+            if (!endOfFile && currentNode.getValue() == PSEUDO_EOF) {
+                endOfFile = true; // Stop when PSEUDO_EOF is encountered
+            } else if (!endOfFile) {
+                outStream.write(currentNode.getValue());
+                totalBitsWritten += BITS_PER_WORD; // Increment counter by the number of bits in a word
+            }
+        }
+
+        outStream.flush();
+        outStream.close();
         inStream.close();
-        return 0;
+
+        return totalBitsWritten; // Return the number of bits written to the output
     }
 
     public void setViewer(IHuffViewer viewer) {
