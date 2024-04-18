@@ -72,26 +72,48 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         return uncompSize - compSize;
     }
 
-    private void calcCompFileSize(int headerFormat, HashMap<Integer, Integer> freqMap, TreeNode huffmanTreeRoot,
-            Map<Integer, String> huffCodes) {
+    /*
+     * Helper method that calculates what the size of the compressed file will be
+     * 
+     * @param headerFormat the header type
+     * 
+     * @param freqMap a map of ascii values and corresponding freqs
+     * 
+     * @param huffmanTreeRoot the root of the huffman tree
+     * 
+     * @param huffCodes a map of ascii values and corresponding hufff codes
+     */
+    private void calcCompFileSize(int headerFormat, HashMap<Integer, Integer> freqMap,
+            TreeNode huffmanTreeRoot, Map<Integer, String> huffCodes) {
+        // loop through all charachters
         for (Integer asciiVal : huffCodes.keySet()) {
             int codeLength = huffCodes.get(asciiVal).length();
             if (asciiVal == PSEUDO_EOF) {
+                // Add the length of the PSUEDO_EOF
                 this.compSize += codeLength;
             } else {
+                // Add the length of each huff code multiplied by its freq in the file
                 int codeFreq = freqMap.get(asciiVal);
                 this.compSize += codeLength * codeFreq;
             }
         }
+        // Account for magic number and header type and header data
         this.compSize += BITS_PER_INT * 2;
         if (headerFormat == STORE_COUNTS) {
             this.compSize += ALPH_SIZE * BITS_PER_INT;
         } else if (headerFormat == STORE_TREE) {
-            updateHeaderInfo(huffmanTreeRoot);
+            updateHeaderInfoForTree(huffmanTreeRoot);
             this.compSize += BITS_PER_INT;
         }
     }
 
+    /*
+     * Helper method that creates a huffman tree from a frequency map
+     * 
+     * @param freqMap a map of ascii values and their frequency in the file
+     * 
+     * @return the root of the new huffman tree
+     */
     private TreeNode getHuffmanTreeRoot(HashMap<Integer, Integer> freqMap) {
         // Create empty priority queue
         PriorityQueue<TreeNode> huffTreeQ = new PriorityQueue<>();
@@ -117,24 +139,38 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         return huffmanTreeRoot;
     }
 
-    private void updateHeaderInfo(TreeNode curNode) {
+    /*
+     * A recursive helper method that calculates the number of bits that will
+     * be used for STORE_TREE header data
+     * 
+     * @param curNode the current node we are traversing
+     */
+    private void updateHeaderInfoForTree(TreeNode curNode) {
         // Return if we fell out of the tree
         if (curNode == null) {
             return;
         }
         if (curNode.isLeaf()) {
+            // Add 1 bit and the data for a leaf node
             this.compSize += BITS_PER_WORD + 2;
-
         } else {
-            // Write 0 if internal node
-
+            // Add one bit if internal node
             this.compSize += 1;
             // Recurse both left and right subtrees
-            updateHeaderInfo(curNode.getLeft());
-            updateHeaderInfo(curNode.getRight());
+            updateHeaderInfoForTree(curNode.getLeft());
+            updateHeaderInfoForTree(curNode.getRight());
         }
     }
 
+    /*
+     * Helper method that creates a frequency mapping of ascii vals and their
+     * frequency
+     * in the file
+     * 
+     * @param inStream the BitInputStream than contains our files data
+     * 
+     * @return the a map of all the freqs for every charachter in the file
+     */
     private HashMap<Integer, Integer> createFreqMap(BitInputStream inStream) throws IOException {
         // HashMap to store ascii values and freqs
         HashMap<Integer, Integer> freqMap = new HashMap<>();
@@ -151,6 +187,15 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         return freqMap;
     }
 
+    /*
+     * A recursive helper method that generates all the huff codes from the hufftree
+     * 
+     * @param curNode starts at the root and becomes the node we are traversing
+     * 
+     * @param curPath is the current path while we traverse to the leaf nodes
+     * 
+     * @return a map of ascii values and their respective huffman codes
+     */
     private Map<Integer, String> generateHuffCode(TreeNode curNode, String curPath) {
         Map<Integer, String> huffMap = new HashMap<>();
         if (curNode.isLeaf()) {
@@ -190,11 +235,11 @@ public class SimpleHuffProcessor implements IHuffProcessor {
     public int compress(InputStream in, OutputStream out, boolean force) throws IOException {
         BitInputStream inStream = new BitInputStream(in);
         BitOutputStream outStream = new BitOutputStream(out);
-        
+
         if (!force && this.compSize >= this.uncompSize) {
             inStream.close();
             outStream.close();
-            myViewer.showError("Cannot compress file as compressed will be larger than original");         
+            myViewer.showError("Cannot compress file as compressed will be larger than original");
             return 0;
         }
         this.writtenBitNum = 0;
@@ -205,19 +250,27 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         if (this.header == STORE_COUNTS) {
             handleStoreCounts(outStream);
         } else if (this.header == STORE_TREE) {
-            handleSoreTree(outStream);
+            handleStoreTree(outStream);
         }
         writeOutDataCompressed(inStream, outStream);
         finishCompress(inStream, outStream);
         return this.writtenBitNum;
     }
 
+    /*
+     * A helper method that writes out the end of file code and closes the streams
+     * 
+     * @param inStream the BitInputStream to close
+     * 
+     * @param outStream the BitOutputStream to close
+     */
     private void finishCompress(BitInputStream inStream, BitOutputStream outStream) {
         // Write PSUEDO_EOF
         String eofStr = huffCodes.get(PSEUDO_EOF);
         int eofBitNum = eofStr.length();
         int eofVal = Integer.parseInt(eofStr, 2);
 
+        // Write out the PSUEDO_EOF huff code
         outStream.writeBits(eofBitNum, eofVal);
         this.writtenBitNum += eofBitNum;
 
@@ -226,23 +279,38 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         inStream.close();
     }
 
+    /*
+     * A helper method that compares each charachter in the original file to its
+     * huff code
+     * and writes the huff code
+     * 
+     * @param inStream the BitInputStream we are reading from
+     * 
+     * @param outStream the BitOutputStream we are writing with
+     */
     private void writeOutDataCompressed(BitInputStream inStream, BitOutputStream outStream) throws IOException {
         // Write out data coded with the huffman codes
         int curVal = inStream.read();
         while (curVal != -1) {
             String huffStr = huffCodes.get(curVal);
             int bitNum = huffStr.length();
-
+            // Turn the huffman code string to and int
             int huffVal = Integer.parseInt(huffStr, 2);
-
+            // Write out the huffcode
             outStream.writeBits(bitNum, huffVal);
             this.writtenBitNum += bitNum;
-
+            // Iterate to the next charachter
             curVal = inStream.read();
         }
     }
 
-    private void handleSoreTree(BitOutputStream outStream) {
+    /*
+     * A helper method to write out the header and header data when header type is
+     * STORE_TREE
+     * 
+     * @param outStream the BitOutputStream we are writing data from
+     */
+    private void handleStoreTree(BitOutputStream outStream) {
         // Header type
         outStream.writeBits(BITS_PER_INT, STORE_TREE);
         this.writtenBitNum += BITS_PER_INT;
@@ -256,6 +324,13 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         writeTreeForSTF(this.huffTreeRoot, outStream);
     }
 
+    /*
+     * A helper method that writes out the header and header data when the header
+     * type
+     * is STORE_COUNTS
+     * 
+     * @param outStream the BitOutputStream we are writing from
+     */
     private void handleStoreCounts(BitOutputStream outStream) {
         // Write out the header type
         outStream.writeBits(BITS_PER_INT, STORE_COUNTS);
@@ -268,6 +343,14 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         }
     }
 
+    /*
+     * A recursive helper method that determines the size of the flattened huff tree
+     * so we can add the size as a 32bit int before we write out the flattened tree
+     * 
+     * @param curNode the current node we are traversing
+     * 
+     * @param size an int array to keep track of the size
+     */
     private int calcTreeSize(TreeNode curNode, int[] size) {
         if (curNode == null) {
             return 0;
@@ -283,6 +366,15 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         return size[0];
     }
 
+    /*
+     * A recursive helper method that performs a pre-order traversal and writes out
+     * the
+     * huff tree with 0 for internal nodes and 1 + ascii value for leaf nodes
+     * 
+     * @param curNode the current node we are traversing
+     * 
+     * @param outStream the BitOutputStream we are writing data from
+     */
     private void writeTreeForSTF(TreeNode curNode, BitOutputStream outStream) {
         // Return if we fell out of the tree
         if (curNode == null) {
@@ -344,9 +436,18 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         return totalBitsWritten;
     }
 
-    
-    
-    
+    /*
+     * A helper method that will write out the converted data from huffcode to
+     * charachter
+     * 
+     * @param inStream the BitInputStream we are reading from
+     * 
+     * @param outStream the ButOutputStream we are writing data from
+     * 
+     * @param codes a map of huffcodes to ascii values
+     * 
+     * @return the number of bits written by the method
+     */
     private int writeUncompData(BitInputStream inStream, BitOutputStream outStream,
             Map<String, Integer> codes) throws IOException {
         int totalBitsWritten = 0;
@@ -358,8 +459,10 @@ public class SimpleHuffProcessor implements IHuffProcessor {
             currentCode += Integer.toString(bit);
             // if the currentCode is a key in the map write out its corresponding charachter
             if (codes.containsKey(currentCode)) {
+                // Get the value the char(ascii val) or PSUEDO_EOF huff code is mapped to
                 int characterValue = codes.get(currentCode);
                 if (characterValue == PSEUDO_EOF) {
+                    // Stop the loop if we read in the PSUEDO_EOF val
                     shouldContinue = false;
                 } else {
                     outStream.write(characterValue);
@@ -374,6 +477,14 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         return totalBitsWritten;
     }
 
+    /*
+     * A helper method that rebuilds the huff tree when the header type is
+     * STORE_COUNTS
+     * 
+     * @param inStream the BitInputStream we are reading from
+     * 
+     * @return the root of the huff tree we rebuilt
+     */
     private TreeNode uncompStoreCount(BitInputStream inStream) throws IOException {
         TreeNode root;
         // Rebuild the frequency array from the header if STORE_COUNTS
@@ -401,15 +512,29 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         return root;
     }
 
+    /*
+     * A helper method that checks if the magic number at the beggining of
+     * the .hf file is correct
+     * 
+     * @param inStream the BitInputStream we are reading from
+     * @param outStream the BitOutputStream we are writing from
+     */
     private void checkMagic(BitInputStream inStream, BitOutputStream outStream) throws IOException {
         int magic = inStream.readBits(BITS_PER_INT);
         if (magic != MAGIC_NUMBER) {
             inStream.close();
             outStream.close();
-            throw new IOException("Invalid magic number, file may not be compressed with this format.");
+            throw new IOException("Invalid magic number file cant be compressed!");
         }
     }
 
+    /*
+     * A recursive helper method that rebuilds the tree when the header is STORE_TREE
+     * 
+     * @param inStream the BitInputStream we are reading from
+     * 
+     * @return the root of the rebuilt huffTree
+     */
     private TreeNode rebuildTree(BitInputStream inStream) throws IOException {
         // Read the bit
         int bit = inStream.readBits(1);
@@ -428,6 +553,14 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         }
     }
 
+    /*
+     * A recursive helper method similar to generateHuffCodes() but mappings are reverse
+     * 
+     * @param curNode the current node we are traversing
+     * @param curPath the current path to the curNode
+     * 
+     * @ return a mapping of huffcodes to ascii values
+     */
     private Map<String, Integer> generateHuffCodeBackwards(TreeNode curNode, String curPath) {
         Map<String, Integer> huffMap = new HashMap<>();
         if (curNode.isLeaf()) {
