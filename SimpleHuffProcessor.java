@@ -190,11 +190,11 @@ public class SimpleHuffProcessor implements IHuffProcessor {
     public int compress(InputStream in, OutputStream out, boolean force) throws IOException {
         BitInputStream inStream = new BitInputStream(in);
         BitOutputStream outStream = new BitOutputStream(out);
-        int compressedSize = this.compSize;
-        int originalSize = in.available() * BITS_PER_WORD;
-        if (!force && compressedSize >= originalSize) {
+        
+        if (!force && this.compSize >= this.uncompSize) {
             inStream.close();
             outStream.close();
+            myViewer.showError("Cannot compress file as compressed will be larger than original");         
             return 0;
         }
         this.writtenBitNum = 0;
@@ -363,7 +363,7 @@ public class SimpleHuffProcessor implements IHuffProcessor {
                     shouldContinue = false;
                 } else {
                     outStream.write(characterValue);
-                    totalBitsWritten += BITS_PER_INT;
+                    totalBitsWritten += BITS_PER_WORD;
                     currentCode = "";
                 }
             }

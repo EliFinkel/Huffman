@@ -40,7 +40,7 @@ import edu.utexas.cs.bevotest.PlaintextTestReporter;
  */
 public class A10_Huffman_Test_Student_Version {
 
-    private static final String DIRECTORY_NAME      = "StudentTestFiles"; // change if you create a different directory
+    private static final String DIRECTORY_NAME      = "FilesForStudentTest"; // change if you create a different directory
     private static final String SMALL_FILE_NAME     = "smallFile";
     private static final String TREE_TEST_FILE_NAME = "TreeTestFile.bmp";
     private static final File testInputDir          = new File("./FilesForStudentTest");
