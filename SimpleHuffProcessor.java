@@ -22,7 +22,6 @@ import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.Map;
 
-
 public class SimpleHuffProcessor implements IHuffProcessor {
 
     private IHuffViewer myViewer;
@@ -31,6 +30,7 @@ public class SimpleHuffProcessor implements IHuffProcessor {
     private int[] freqs;
     private Map<Integer, String> huffCodes;
     private int writtenBitNum;
+    private int headerTreeSize;
 
     private int uncompSize;
     private int compSize;
@@ -56,14 +56,14 @@ public class SimpleHuffProcessor implements IHuffProcessor {
      * @throws IOException if an error occurs while reading from the input file.
      */
     public int preprocessCompress(InputStream in, int headerFormat) throws IOException {
+        this.compSize = 0;
+        this.uncompSize = 0;
         // Create empty priority queue
         PriorityQueue<TreeNode> huffTreeQ = new PriorityQueue<>();
         this.header = headerFormat;
         BitInputStream inStream = new BitInputStream(in);
         // Map to store ascii value of char and its freqs
         HashMap<Integer, Integer> freqMap = createFreqMap(inStream);
-
-    
 
         // Creates and adds a TreeNode for each char in freqMap
         for (Integer asciiVal : freqMap.keySet()) {
@@ -90,30 +90,34 @@ public class SimpleHuffProcessor implements IHuffProcessor {
 
         // Generate Huffman codes from the tree root
         Map<Integer, String> huffCodes = generateHuffCode(this.huffTreeRoot, "");
+        // for(Integer asciiVal : huffCodes.keySet()){
+        // System.out.println(asciiVal + " --> " + huffCodes.get(asciiVal));
+        // }
         this.huffCodes = huffCodes;
 
-        // Calculate the compressed file size
-        for (Integer i : freqMap.keySet()) {
-            int asciiVal = i;
-            int charFreq = freqMap.get(i);
-            String huffCode = huffCodes.get(asciiVal);
-            compSize += huffCode.length() * charFreq;
+        for (Integer asciiVal : huffCodes.keySet()) {
+            int codeLength = huffCodes.get(asciiVal).length();
+            if (asciiVal == PSEUDO_EOF) {
+                compSize += codeLength;
+            } else {
+                int codeFreq = freqMap.get(asciiVal);
+                compSize += codeLength * codeFreq;
+            }
         }
 
-        // Add bits for magic number and header type
         compSize += BITS_PER_INT;
         compSize += BITS_PER_INT;
 
-        // Add respective header info
         if (headerFormat == STORE_COUNTS) {
-            compSize += BITS_PER_INT * ALPH_SIZE;
-        } else if(headerFormat == STORE_TREE){
+            compSize += ALPH_SIZE * BITS_PER_INT;
+
+        } else if (headerFormat == STORE_TREE) {
             updateHeaderInfo(huffmanTreeRoot);
+            compSize += BITS_PER_INT;
         }
 
         return uncompSize - compSize; // Calculate and return the number of bits saved
     }
-
 
     private void updateHeaderInfo(TreeNode curNode) {
         // Return if we fell out of the tree
@@ -124,13 +128,14 @@ public class SimpleHuffProcessor implements IHuffProcessor {
             this.compSize += BITS_PER_WORD + 2;
 
         } else {
+            // Write 0 if internal node
+
             this.compSize += 1;
             // Recurse both left and right subtrees
             updateHeaderInfo(curNode.getLeft());
             updateHeaderInfo(curNode.getRight());
         }
     }
-
 
     private HashMap<Integer, Integer> createFreqMap(BitInputStream inStream) throws IOException {
         // HashMap to store ascii values and freqs
@@ -140,8 +145,12 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         // Read everyvalue and add or update its frequency in the map
         int curVal = inStream.read();
         while (curVal != -1) {
+            if (curVal == 250) {
+                // System.out.println((char)curVal);
+            }
             // String letter = Character.toString((char) curVal);
             freqMap.put(curVal, freqMap.getOrDefault(curVal, 0) + 1);
+
             freqs[curVal]++;
             curVal = inStream.read();
         }
@@ -219,6 +228,9 @@ public class SimpleHuffProcessor implements IHuffProcessor {
             }
         } else if (this.header == STORE_TREE) {
             // Write out flattend BST
+            // To handle tree size before flattened tree
+            this.writtenBitNum += BITS_PER_INT;
+
             writeTreeForSTF(this.huffTreeRoot, outStream);
         }
 
@@ -244,10 +256,9 @@ public class SimpleHuffProcessor implements IHuffProcessor {
         outStream.writeBits(eofBitNum, eofVal);
         this.writtenBitNum += eofBitNum;
 
+        myViewer.showMessage("Wrote: " + this.writtenBitNum);
         outStream.close();
         inStream.close();
-
-        myViewer.showMessage("Wrote: " + this.writtenBitNum);
         return this.writtenBitNum;
     }
 
@@ -267,6 +278,7 @@ public class SimpleHuffProcessor implements IHuffProcessor {
             // Write 0 if internal node
             outStream.writeBits(1, 0);
             this.writtenBitNum += 1;
+
             // Recurse both left and right subtrees
             writeTreeForSTF(curNode.getLeft(), outStream);
             writeTreeForSTF(curNode.getRight(), outStream);

@@ -49,6 +49,7 @@ public class Diff {
             int bytesRead = 1;
             while (x != -1 && y != -1) {
                 if (x != y) {
+                    System.out.println("First bit: " + x + " second bit: " + y);
                     diffStats.totalDifferences++;
                     if (diffStats.firstDiff == -1)
                         diffStats.firstDiff = bytesRead;
