@@ -363,7 +363,7 @@ public class SimpleHuffProcessor implements IHuffProcessor {
                     shouldContinue = false;
                 } else {
                     outStream.write(characterValue);
-                    totalBitsWritten += 8;
+                    totalBitsWritten += BITS_PER_INT;
                     currentCode = "";
                 }
             }
